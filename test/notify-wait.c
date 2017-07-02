@@ -164,11 +164,9 @@ int main(int argc, char *argv[]) {
                 struct timespec ts;
                 uint64_t nw;
 
-                if (waitid(P_PID, pid, &si, WEXITED|WNOHANG) < 0) {
-                        r = -errno;
-                        fprintf(stderr, "Failed to wait for children: %s\n", strerror(-r));
-                        goto finish;
-                }
+                r = -errno;
+                fprintf(stderr, "Failed to wait for children: %s\n", strerror(-r));
+                goto finish;
 
                 if (si.si_pid > 0) {
 

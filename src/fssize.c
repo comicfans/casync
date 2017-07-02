@@ -110,10 +110,7 @@ int read_file_system_size(int fd, uint64_t *ret) {
         if (n != sizeof(superblock))
                 return 0; /* don't know such short file systems */
 
-        if (le32toh(superblock.squashfs.s_magic == SQUASHFS_MAGIC)) {
-                *ret = ALIGN_TO(le64toh(superblock.squashfs.bytes_used), UINT64_C(4096));
-                return 1;
-        }
+        
 
         if (le32toh(superblock.android_bootimg.magic) == _ANDROID_BOOTIMG_MAGIC_1 &&
             le32toh(superblock.android_bootimg.magic2) == _ANDROID_BOOTIMG_MAGIC_2) {
@@ -150,15 +147,7 @@ int read_file_system_size(int fd, uint64_t *ret) {
                 }
         }
 
-        if (le16toh(superblock.ext234.s_magic) == EXT2_SUPER_MAGIC) {
-                uint64_t shift;
-
-                shift = 10 + le32toh(superblock.ext234.s_log_block_size);
-                if (shift < 64) {
-                        *ret = (uint64_t) le32toh(superblock.ext234.s_blocks_count) * (UINT64_C(1) << shift);
-                        return 1;
-                }
-        }
+        
 
         return 0;
 }

@@ -1,7 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/poll.h>
-#include <sys/prctl.h>
 #include <sys/stat.h>
 
 #include "cachunk.h"
@@ -957,8 +956,6 @@ static int ca_remote_start(CaRemote *rr) {
                         }
 
                         safe_close(pair1[1]);
-
-                        (void) prctl(PR_SET_PDEATHSIG, SIGTERM);
 
                         argc = (rr->callout ? 1 : 3) + 5 + strv_length(rr->rstore_urls);
 

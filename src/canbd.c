@@ -1,6 +1,4 @@
 #include <fcntl.h>
-#include <linux/fs.h>
-#include <linux/nbd.h>
 #include <sys/ioctl.h>
 #include <sys/poll.h>
 #include <sys/prctl.h>

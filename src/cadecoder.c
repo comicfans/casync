@@ -2,6 +2,7 @@
 #include <grp.h>
 #include <pwd.h>
 #include <stddef.h>
+#include <stdlib.h>
 #include <sys/acl.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -9,8 +10,6 @@
 #include <sys/xattr.h>
 #include <unistd.h>
 
-#include <linux/fs.h>
-#include <linux/msdos_fs.h>
 
 #include "cadecoder.h"
 #include "caformat-util.h"
@@ -23,6 +22,8 @@
 #include "rm-rf.h"
 #include "siphash24.h"
 #include "util.h"
+
+typedef int (*comparison_fn_t)(const void *, const void *);
 
 /* #undef EINVAL */
 /* #define EINVAL __LINE__ */
@@ -39,12 +40,7 @@
 /* #undef EUNATCH */
 /* #define EUNATCH __LINE__ */
 
-#define APPLY_EARLY_FS_FL                       \
-        (FS_NOATIME_FL|                         \
-         FS_COMPR_FL|                           \
-         FS_NOCOW_FL|                           \
-         FS_NOCOMP_FL|                          \
-         FS_PROJINHERIT_FL)
+#define APPLY_EARLY_FS_FL         0xffff      
 
 typedef struct CaDecoderExtendedAttribute {
         struct CaDecoderExtendedAttribute *next;
@@ -2626,19 +2622,6 @@ static int ca_decoder_realize_child(CaDecoder *d, CaDecoderNode *n, CaDecoderNod
                 assert(false);
         }
 
-        if (child->fd >= 0 && (read_le64(&child->entry->flags) & d->feature_flags & CA_FORMAT_WITH_CHATTR) != 0) {
-                unsigned new_attr;
-
-                /* A select few chattr() attributes need to be applied (or are better applied) on empty
-                 * files/directories instead of the final result, do so here. */
-
-                new_attr = ca_feature_flags_to_chattr(read_le64(&child->entry->flags) & d->feature_flags) & APPLY_EARLY_FS_FL;
-
-                if (new_attr != 0) {
-                        if (ioctl(child->fd, FS_IOC_SETFLAGS, &new_attr) < 0)
-                                return -errno;
-                }
-        }
 
         return 0;
 }
@@ -3026,18 +3009,7 @@ static int ca_decoder_node_reflink(CaDecoder *d, CaDecoderNode *n) {
                         if (source_fd < 0)
                                 return source_fd;
 
-                        r = reflink_fd(source_fd, l->offset, n->fd, offset, l->size, &reflinked);
-                        safe_close(source_fd);
-                        if (r == -EBADR) /* the offsets are not multiples of 512 */
-                                continue;
-                        if (r == -EXDEV) /* cross-device reflinks aren't supported */
-                                continue;
-                        if (IN_SET(r, -ENOTTY, -EOPNOTSUPP)) /* reflinks not supported */
-                                break;
-                        if (r < 0)
-                                return r;
-
-                        d->n_reflink_bytes += reflinked;
+                        break;
                 }
 
                 offset += l->size;
@@ -3138,7 +3110,6 @@ finish:
 
 static int drop_immutable(int dir_fd, const char *name) {
         struct stat st;
-        unsigned attr;
         int fd, r;
 
         if (dir_fd < 0)
@@ -3163,23 +3134,11 @@ static int drop_immutable(int dir_fd, const char *name) {
                 goto finish;
         }
 
-        if (ioctl(fd, FS_IOC_GETFLAGS, &attr) < 0) {
                 /* If the fs doesn't actually support chattr(1) flags, then let's not do anything */
                 r = IN_SET(errno, ENOTTY, ENOSYS, EBADF, EOPNOTSUPP) ? 0 : -errno;
                 goto finish;
-        }
 
-        if ((attr & FS_IMMUTABLE_FL) == 0) {
-                r = 0; /* nothing to unset */
-                goto finish;
-        }
-
-        attr &= ~FS_IMMUTABLE_FL;
-
-        if (ioctl(fd, FS_IOC_SETFLAGS, &attr) < 0) {
-                r = -errno;
-                goto finish;
-        }
+        
 
         r = 1;
 
@@ -3453,7 +3412,7 @@ static int ca_decoder_finalize_child(CaDecoder *d, CaDecoderNode *n, CaDecoderNo
                         if (!n)
                                 return -EINVAL;
 
-                        path_fd = openat(dir_fd, name, O_RDONLY|O_CLOEXEC|O_NOFOLLOW|O_PATH);
+                        path_fd = openat(dir_fd, name, O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
                         if (path_fd < 0)
                                 return -errno;
                 }
@@ -3640,50 +3599,6 @@ static int ca_decoder_finalize_child(CaDecoder *d, CaDecoderNode *n, CaDecoderNo
 
                 child->temporary_name = mfree(child->temporary_name);
                 name = child->name;
-        }
-
-        if ((d->feature_flags & CA_FORMAT_WITH_CHATTR) != 0 && child->fd >= 0) {
-                unsigned new_attr, old_attr;
-
-                new_attr = ca_feature_flags_to_chattr(read_le64(&child->entry->flags) & d->feature_flags);
-                assert((new_attr & ~FS_FL_USER_MODIFIABLE) == 0);
-
-                if (ioctl(child->fd, FS_IOC_GETFLAGS, &old_attr) < 0) {
-
-                        if (new_attr != 0 || !IN_SET(errno, ENOTTY, ENOSYS, EBADF, EOPNOTSUPP))
-                                return -errno;
-
-                } else if ((old_attr & FS_FL_USER_MODIFIABLE) != new_attr) {
-                        unsigned final_attr;
-
-                        final_attr = (old_attr & ~FS_FL_USER_MODIFIABLE) | new_attr;
-                        if (ioctl(child->fd, FS_IOC_SETFLAGS, &final_attr) < 0)
-                                return -errno;
-                }
-        }
-
-        if ((d->feature_flags & CA_FORMAT_WITH_FAT_ATTRS) != 0 && child->fd >= 0) {
-                uint32_t new_attr;
-
-                new_attr = ca_feature_flags_to_fat_attrs(read_le64(&child->entry->flags) & d->feature_flags);
-
-                if (magic == MSDOS_SUPER_MAGIC) {
-                        uint32_t old_attr;
-
-                        if (ioctl(child->fd, FAT_IOCTL_GET_ATTRIBUTES, &old_attr) < 0)
-                                return -errno;
-
-                        if ((old_attr & (ATTR_HIDDEN|ATTR_SYS|ATTR_ARCH)) != (new_attr & (ATTR_HIDDEN|ATTR_SYS|ATTR_ARCH))) {
-
-                                new_attr |= old_attr & ~(ATTR_HIDDEN|ATTR_SYS|ATTR_ARCH);
-
-                                if (ioctl(child->fd, FAT_IOCTL_SET_ATTRIBUTES, &new_attr) < 0)
-                                        return -errno;
-                        }
-                } else {
-                        if (new_attr != 0)
-                                return -EOPNOTSUPP;
-                }
         }
 
         return 0;
@@ -5118,12 +5033,6 @@ int ca_decoder_try_hardlink(CaDecoder *d, CaFileRoot *root, const char *path) {
         if (!S_ISREG(mode))
                 return -ENOTTY;
 
-        if (fstatat(root->fd, path, &st, AT_EMPTY_PATH|AT_SYMLINK_NOFOLLOW) < 0) {
-                if (errno == ENOENT) /* vanished by now? */
-                        return 0;
-
-                return -errno;
-        }
 
         /* Before we put the symlink in place, make some superficial checks if the node is still the same as when we
          * generated the seed for it. */

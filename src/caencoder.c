@@ -16,9 +16,6 @@
 #include <sys/xattr.h>
 #include <unistd.h>
 
-#include <linux/fs.h>
-#include <linux/magic.h>
-#include <linux/msdos_fs.h>
 
 #include "caencoder.h"
 #include "caformat-util.h"
@@ -474,37 +471,7 @@ static int ca_encoder_node_read_dirents(CaEncoderNode *n) {
         return 1;
 }
 
-static int ca_encoder_node_read_device_size(CaEncoderNode *n) {
-        unsigned long u = 0;
-        uint64_t fs_size;
-        int r;
 
-        assert(n);
-
-        if (n->device_size != (uint64_t) -1)
-                return 0;
-        if (!S_ISBLK(n->stat.st_mode))
-                return -ENOTTY;
-        if (n->fd < 0)
-                return -EBADFD;
-
-        if (ioctl(n->fd, BLKGETSIZE, &u) < 0)
-                return -errno;
-
-        n->device_size = (uint64_t) u * 512;
-
-        r = read_file_system_size(n->fd, &fs_size);
-        if (r < 0)
-                return r;
-        if (r > 0) {
-                /* The actual superblock claims a smaller size, let's fix this up. */
-
-                if (n->device_size > fs_size)
-                        n->device_size = fs_size;
-        }
-
-        return 1;
-}
 
 static int ca_encoder_node_read_symlink(
                 CaEncoderNode *n,
@@ -551,11 +518,9 @@ static int ca_encoder_node_read_chattr(
         if ((e->feature_flags & (CA_FORMAT_WITH_CHATTR|CA_FORMAT_EXCLUDE_NODUMP)) == 0)
                 return 0;
 
-        r = ioctl(n->fd, FS_IOC_GETFLAGS, &n->chattr_flags);
+        r = -1;
         if (r < 0) {
                 /* If a file system or node type doesn't support chattr flags, then initialize things to zero */
-                if (!IN_SET(errno, ENOTTY, ENOSYS, EBADF, EOPNOTSUPP))
-                        return -errno;
 
                 n->chattr_flags = 0;
         }
@@ -565,38 +530,6 @@ static int ca_encoder_node_read_chattr(
         return 0;
 }
 
-static int ca_encoder_node_read_fat_attrs(
-                CaEncoder *e,
-                CaEncoderNode *n) {
-
-        assert(e);
-        assert(n);
-
-        if (!S_ISDIR(n->stat.st_mode) && !S_ISREG(n->stat.st_mode))
-                return 0;
-        if (n->fd < 0)
-                return -EBADFD;
-        if (n->fat_attrs_valid)
-                return 0;
-        if ((e->feature_flags & CA_FORMAT_WITH_FAT_ATTRS) == 0)
-                return 0;
-
-        if (IN_SET(n->magic, MSDOS_SUPER_MAGIC, FUSE_SUPER_MAGIC)) {
-                /* FUSE and true FAT file systems might implement this ioctl(), otherwise don't bother */
-                if (ioctl(n->fd, FAT_IOCTL_GET_ATTRIBUTES, &n->fat_attrs) < 0) {
-
-                        if (!IN_SET(errno, ENOTTY, ENOSYS, EBADF, EOPNOTSUPP))
-                                return -errno;
-
-                        n->fat_attrs = 0;
-                }
-        } else
-                n->fat_attrs = 0;
-
-        n->fat_attrs_valid = true;
-
-        return 0;
-}
 
 static int compare_xattr(const void *a, const void *b) {
         const CaEncoderExtendedAttribute *x = a, *y = b;
@@ -652,7 +585,7 @@ static int ca_encoder_node_read_xattrs(
                 }
 
                 /* There's no listxattrat() unfortunately, we fake it via openat() with O_PATH */
-                path_fd = openat(parent->fd, de->d_name, O_RDONLY|O_CLOEXEC|O_NOFOLLOW|O_PATH);
+                path_fd = openat(parent->fd, de->d_name, O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
                 if (path_fd < 0) {
                         r = -errno;
                         goto finish;
@@ -1358,7 +1291,7 @@ static int ca_encoder_node_read_acl(
                 }
 
                 /* There's no acl_get_fdat() unfortunately, we fake it via openat() with O_PATH */
-                path_fd = openat(parent->fd, de->d_name, O_RDONLY|O_CLOEXEC|O_NOFOLLOW|O_PATH);
+                path_fd = openat(parent->fd, de->d_name, O_RDONLY|O_CLOEXEC|O_NOFOLLOW);
                 if (path_fd < 0) {
                         r = -errno;
                         goto finish;
@@ -1601,9 +1534,6 @@ static int ca_encoder_shall_store_child_node(CaEncoder *e, CaEncoderNode *n) {
         r = ca_encoder_node_read_chattr(e, child);
         if (r < 0)
                 return r;
-        if ((e->feature_flags & CA_FORMAT_EXCLUDE_NODUMP) &&
-            (child->chattr_flags & FS_NODUMP_FL))
-                return false;
 
         /* Check if we are crossing a mount point boundary */
         r = ca_encoder_node_read_mount_id(e, n);
@@ -1630,24 +1560,13 @@ static int ca_encoder_node_shall_enumerate(CaEncoder *e, CaEncoderNode *n) {
 
         /* Exclude all virtual API file systems */
         if (IN_SET(n->magic,
-                   BINFMTFS_MAGIC,
                    CGROUP2_SUPER_MAGIC,
-                   CGROUP_SUPER_MAGIC,
                    CONFIGFS_MAGIC,
-                   DEBUGFS_MAGIC,
-                   DEVPTS_SUPER_MAGIC,
-                   EFIVARFS_MAGIC,
                    FUSE_CTL_SUPER_MAGIC,
-                   HUGETLBFS_MAGIC,
                    MQUEUE_MAGIC,
                    NFSD_MAGIC,
-                   PROC_SUPER_MAGIC,
-                   PSTOREFS_MAGIC,
-                   RPCAUTH_GSSMAGIC,
-                   SECURITYFS_MAGIC,
-                   SELINUX_MAGIC,
-                   SMACK_MAGIC,
-                   SYSFS_MAGIC))
+                   RPCAUTH_GSSMAGIC
+                   ))
                 return false;
 
         return true;
@@ -1674,14 +1593,6 @@ static int ca_encoder_node_get_payload_size(CaEncoderNode *n, uint64_t *ret) {
                 return 0;
         }
 
-        if (S_ISBLK(n->stat.st_mode)) {
-                r = ca_encoder_node_read_device_size(n);
-                if (r < 0)
-                        return r;
-
-                *ret = n->device_size;
-                return 0;
-        }
 
         return -ENOTTY;
 }
@@ -2150,10 +2061,6 @@ static int ca_encoder_get_entry_data(CaEncoder *e, CaEncoderNode *n) {
         if (r < 0)
                 return r;
 
-        r = ca_encoder_node_read_fat_attrs(e, n);
-        if (r < 0)
-                return r;
-
         r = ca_encoder_node_read_xattrs(e, n);
         if (r < 0)
                 return r;
@@ -2206,19 +2113,6 @@ static int ca_encoder_get_entry_data(CaEncoder *e, CaEncoderNode *n) {
         mtime = ca_encoder_fixup_mtime(e, n);
         mode = ca_encoder_fixup_mode(e, n);
 
-        if (S_ISDIR(n->stat.st_mode) || S_ISREG(n->stat.st_mode)) {
-                /* chattr(1) flags and FAT file flags are only defined for regular files and directories */
-
-                if ((e->feature_flags & CA_FORMAT_WITH_CHATTR) != 0) {
-                        assert(n->chattr_flags_valid);
-                        flags |= ca_feature_flags_from_chattr(n->chattr_flags) & e->feature_flags;
-                }
-
-                if ((e->feature_flags & CA_FORMAT_WITH_FAT_ATTRS) != 0) {
-                        assert(n->fat_attrs_valid);
-                        flags |= ca_feature_flags_from_fat_attrs(n->fat_attrs) & e->feature_flags;
-                }
-        }
 
         r = ca_encoder_node_shall_enumerate(e, n);
         if (r < 0)

@@ -1,5 +1,3 @@
-#include <linux/fs.h>
-#include <linux/msdos_fs.h>
 
 #include "caformat.h"
 #include "caformat-util.h"
@@ -256,15 +254,6 @@ static const struct {
         uint64_t feature_flag;
         unsigned chattr_flag;
 } chattr_map[] = {
-        { CA_FORMAT_WITH_FLAG_APPEND,      FS_APPEND_FL      },
-        { CA_FORMAT_WITH_FLAG_NOATIME,     FS_NOATIME_FL     },
-        { CA_FORMAT_WITH_FLAG_COMPR,       FS_COMPR_FL       },
-        { CA_FORMAT_WITH_FLAG_NOCOW,       FS_NOCOW_FL       },
-        { CA_FORMAT_WITH_FLAG_NODUMP,      FS_NODUMP_FL      },
-        { CA_FORMAT_WITH_FLAG_DIRSYNC,     FS_DIRSYNC_FL     },
-        { CA_FORMAT_WITH_FLAG_IMMUTABLE,   FS_IMMUTABLE_FL   },
-        { CA_FORMAT_WITH_FLAG_SYNC,        FS_SYNC_FL        },
-        { CA_FORMAT_WITH_FLAG_NOCOMP,      FS_NOCOMP_FL      },
         { CA_FORMAT_WITH_FLAG_PROJINHERIT, FS_PROJINHERIT_FL },
 };
 
@@ -295,9 +284,6 @@ static const struct {
         uint64_t feature_flag;
         uint32_t fat_flag;
 } fat_attrs_map[] = {
-        { CA_FORMAT_WITH_FLAG_HIDDEN,  ATTR_HIDDEN },
-        { CA_FORMAT_WITH_FLAG_SYSTEM,  ATTR_SYS    },
-        { CA_FORMAT_WITH_FLAG_ARCHIVE, ATTR_ARCH   },
 };
 
 uint64_t ca_feature_flags_from_fat_attrs(uint32_t flags) {
@@ -330,39 +316,6 @@ uint64_t ca_feature_flags_from_magic(statfs_f_type_t magic) {
 
         switch (magic) {
 
-        case MSDOS_SUPER_MAGIC:
-                return
-                        CA_FORMAT_WITH_2SEC_TIME|
-                        CA_FORMAT_WITH_READ_ONLY|
-                        CA_FORMAT_WITH_FLAG_HIDDEN|
-                        CA_FORMAT_WITH_FLAG_SYSTEM|
-                        CA_FORMAT_WITH_FLAG_ARCHIVE;
-
-        case EXT2_SUPER_MAGIC:
-                return
-                        CA_FORMAT_WITH_16BIT_UIDS|
-                        CA_FORMAT_WITH_32BIT_UIDS|
-                        CA_FORMAT_WITH_USER_NAMES|
-                        CA_FORMAT_WITH_SEC_TIME|
-                        CA_FORMAT_WITH_USEC_TIME|
-                        CA_FORMAT_WITH_NSEC_TIME|
-                        CA_FORMAT_WITH_2SEC_TIME|
-                        CA_FORMAT_WITH_READ_ONLY|
-                        CA_FORMAT_WITH_PERMISSIONS|
-                        CA_FORMAT_WITH_SYMLINKS|
-                        CA_FORMAT_WITH_DEVICE_NODES|
-                        CA_FORMAT_WITH_FIFOS|
-                        CA_FORMAT_WITH_SOCKETS|
-                        CA_FORMAT_WITH_FLAG_APPEND|
-                        CA_FORMAT_WITH_FLAG_NOATIME|
-                        CA_FORMAT_WITH_FLAG_NODUMP|
-                        CA_FORMAT_WITH_FLAG_DIRSYNC|
-                        CA_FORMAT_WITH_FLAG_IMMUTABLE|
-                        CA_FORMAT_WITH_FLAG_SYNC|
-                        CA_FORMAT_WITH_XATTRS|
-                        CA_FORMAT_WITH_ACL|
-                        CA_FORMAT_WITH_FCAPS;
-
         case XFS_SUPER_MAGIC:
                 return
                         CA_FORMAT_WITH_16BIT_UIDS|
@@ -386,51 +339,6 @@ uint64_t ca_feature_flags_from_magic(statfs_f_type_t magic) {
                         CA_FORMAT_WITH_XATTRS|
                         CA_FORMAT_WITH_ACL|
                         CA_FORMAT_WITH_FCAPS;
-
-        case BTRFS_SUPER_MAGIC:
-                return
-                        CA_FORMAT_WITH_16BIT_UIDS|
-                        CA_FORMAT_WITH_32BIT_UIDS|
-                        CA_FORMAT_WITH_USER_NAMES|
-                        CA_FORMAT_WITH_SEC_TIME|
-                        CA_FORMAT_WITH_USEC_TIME|
-                        CA_FORMAT_WITH_NSEC_TIME|
-                        CA_FORMAT_WITH_2SEC_TIME|
-                        CA_FORMAT_WITH_READ_ONLY|
-                        CA_FORMAT_WITH_PERMISSIONS|
-                        CA_FORMAT_WITH_SYMLINKS|
-                        CA_FORMAT_WITH_DEVICE_NODES|
-                        CA_FORMAT_WITH_FIFOS|
-                        CA_FORMAT_WITH_SOCKETS|
-                        CA_FORMAT_WITH_FLAG_APPEND|
-                        CA_FORMAT_WITH_FLAG_NOATIME|
-                        CA_FORMAT_WITH_FLAG_COMPR|
-                        CA_FORMAT_WITH_FLAG_NOCOW|
-                        CA_FORMAT_WITH_FLAG_NODUMP|
-                        CA_FORMAT_WITH_FLAG_DIRSYNC|
-                        CA_FORMAT_WITH_FLAG_IMMUTABLE|
-                        CA_FORMAT_WITH_FLAG_SYNC|
-                        CA_FORMAT_WITH_FLAG_NOCOMP|
-                        CA_FORMAT_WITH_XATTRS|
-                        CA_FORMAT_WITH_ACL|
-                        CA_FORMAT_WITH_FCAPS;
-
-        case TMPFS_MAGIC:
-                return
-                        CA_FORMAT_WITH_16BIT_UIDS|
-                        CA_FORMAT_WITH_32BIT_UIDS|
-                        CA_FORMAT_WITH_USER_NAMES|
-                        CA_FORMAT_WITH_SEC_TIME|
-                        CA_FORMAT_WITH_USEC_TIME|
-                        CA_FORMAT_WITH_NSEC_TIME|
-                        CA_FORMAT_WITH_2SEC_TIME|
-                        CA_FORMAT_WITH_READ_ONLY|
-                        CA_FORMAT_WITH_PERMISSIONS|
-                        CA_FORMAT_WITH_SYMLINKS|
-                        CA_FORMAT_WITH_DEVICE_NODES|
-                        CA_FORMAT_WITH_FIFOS|
-                        CA_FORMAT_WITH_SOCKETS|
-                        CA_FORMAT_WITH_ACL;
 
         case FUSE_SUPER_MAGIC:
                 /* We don't actually know what the backing FUSE file system supports, but it's likely more limited than

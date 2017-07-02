@@ -12,6 +12,7 @@ project('casync', 'c',
 cc = meson.get_compiler('c')
 
 c_args = '''
+        -g
         -Wextra
         -Werror=undef
         -Wformat=2 -Wformat-security -Wformat-nonliteral
@@ -47,10 +48,7 @@ c_args = '''
         -fdiagnostics-show-option
         -fno-strict-aliasing
         -fvisibility=hidden
-        -fstack-protector
-        -fstack-protector-strong
         -fPIE
-        --param=ssp-buffer-size=4
 '''.split()
 
 foreach arg : c_args

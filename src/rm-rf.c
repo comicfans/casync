@@ -1,6 +1,4 @@
 #include <fcntl.h>
-#include <linux/fs.h>
-#include <linux/magic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <sys/ioctl.h>
@@ -53,24 +51,9 @@ static int unlinkat_immutable(int dir_fd, const char *name, int flags, RemoveFla
                 }
         }
 
-        if (ioctl(fd, FS_IOC_GETFLAGS, &attr) < 0) {
-                /* If chattr(1) flags are not supported, propagate the original error */
-                r = IN_SET(errno, ENOTTY, ENOSYS, EBADF, EOPNOTSUPP) ? -EPERM : -errno;
-                goto fail;
-        }
 
-        if ((attr & FS_IMMUTABLE_FL) == 0) {
-                /* immutable flag isn't set, propagate original error */
-                r = -EPERM;
-                goto fail;
-        }
 
-        attr &= ~FS_IMMUTABLE_FL;
-
-        if (ioctl(fd, FS_IOC_SETFLAGS, &attr) < 0) {
-                r = -errno;
-                goto fail;
-        }
+        
 
         fd = safe_close(fd);
 
@@ -167,7 +150,7 @@ int rm_rf_children(int fd, RemoveFlags flags, struct stat *root_dev) {
                         if (root_dev && st.st_dev != root_dev->st_dev)
                                 continue;
 
-                        subdir_fd = openat(fd, de->d_name, O_RDONLY|O_NONBLOCK|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW|O_NOATIME);
+                        subdir_fd = openat(fd, de->d_name, O_RDONLY|O_NONBLOCK|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
                         if (subdir_fd < 0) {
                                 if (ret == 0 && errno != ENOENT)
                                         ret = -errno;
@@ -213,7 +196,7 @@ int rm_rf_at(int dir_fd, const char *path, RemoveFlags flags) {
         if (streq(path, "/"))
                 return -EPERM;
 
-        fd = openat(dir_fd, path, O_RDONLY|O_NONBLOCK|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW|O_NOATIME);
+        fd = openat(dir_fd, path, O_RDONLY|O_NONBLOCK|O_DIRECTORY|O_CLOEXEC|O_NOFOLLOW);
         if (fd < 0) {
 
                 if (!IN_SET(errno, ENOTDIR, ELOOP))
@@ -223,7 +206,7 @@ int rm_rf_at(int dir_fd, const char *path, RemoveFlags flags) {
 
                 if (!(flags & REMOVE_PHYSICAL)) {
 
-                        fd = openat(dir_fd, path, O_PATH|O_CLOEXEC|O_NOFOLLOW);
+                        fd = openat(dir_fd, path, O_CLOEXEC|O_NOFOLLOW);
                         if (fd < 0)
                                 return -errno;
 

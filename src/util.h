@@ -14,9 +14,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <linux/magic.h>
-#include <linux/types.h>
-#include <linux/fs.h>
 
 #define new(t, n) ((t*) malloc((n) * sizeof(t)))
 #define new0(t, n) ((t*) calloc((n), sizeof(t)))
@@ -490,12 +487,8 @@ static inline bool strv_isempty(char **l) {
 #  endif
 
 static inline int renameat2(int oldfd, const char *oldname, int newfd, const char *newname, unsigned flags) {
-#  ifdef __NR_renameat2
-        return syscall(__NR_renameat2, oldfd, oldname, newfd, newname, flags);
-#  else
         errno = ENOSYS;
         return -1;
-#  endif
 }
 #endif
 
@@ -559,8 +552,7 @@ static inline bool is_fs_type(const struct statfs *s, statfs_f_type_t magic_valu
 }
 
 static inline bool is_temporary_fs(const struct statfs *s) {
-    return is_fs_type(s, TMPFS_MAGIC) ||
-           is_fs_type(s, RAMFS_MAGIC);
+    return false;
 }
 
 #define IS_POWER_OF_TWO(x) (__builtin_popcount(x) == 1)

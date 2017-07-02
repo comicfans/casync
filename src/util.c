@@ -5,8 +5,6 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <time.h>
-#include <linux/fs.h>
-#include <linux/msdos_fs.h>
 
 #if USE_SYS_RANDOM_H
 #  include <sys/random.h>
@@ -110,13 +108,7 @@ int write_zeroes(int fd, size_t l) {
                 return -errno;
 
         if (end > p) {
-                if (fallocate(fd, FALLOC_FL_PUNCH_HOLE|FALLOC_FL_KEEP_SIZE, p, l) < 0) {
-
-                        if (lseek(fd, p, SEEK_SET) == (off_t) -1) /* Revert to the original position, before we fallback to write() */
-                                return -errno;
-
                         goto fallback;
-                }
         }
 
         if (p + (off_t) l > end) {
@@ -678,16 +670,6 @@ char *ls_format_chattr(unsigned flags, char ret[LS_FORMAT_CHATTR_MAX]) {
                 unsigned flag;
                 char code;
         } table[] = {
-                { FS_SYNC_FL,        'S' },
-                { FS_DIRSYNC_FL,     'D' },
-                { FS_IMMUTABLE_FL,   'i' },
-                { FS_APPEND_FL,      'a' },
-                { FS_NODUMP_FL,      'd' },
-                { FS_NOATIME_FL,     'A' },
-                { FS_COMPR_FL,       'c' },
-                { FS_NOCOMP_FL,      'N' }, /* Not an official one, but one we made up, since lsattr(1) doesn't know it. Subject to change, as soon as it starts supporting that. */
-                { FS_NOCOW_FL,       'C' },
-                { FS_PROJINHERIT_FL, 'P' },
         };
 
         size_t i;
@@ -711,9 +693,6 @@ char *ls_format_fat_attrs(uint32_t flags, char ret[LS_FORMAT_FAT_ATTRS_MAX]) {
                 uint32_t flag;
                 char code;
         } table[] = {
-                { ATTR_HIDDEN, 'h' },
-                { ATTR_SYS,    's' },
-                { ATTR_ARCH,   'a' },
         };
 
         size_t i;
@@ -1066,14 +1045,6 @@ int wait_for_terminate(pid_t pid, siginfo_t *status) {
 
         for (;;) {
                 memset(status, 0, sizeof(siginfo_t));
-
-                if (waitid(P_PID, pid, status, WEXITED) < 0) {
-
-                        if (errno == EINTR)
-                                continue;
-
-                        return -errno;
-                }
 
                 return 0;
         }

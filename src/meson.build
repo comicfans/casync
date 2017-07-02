@@ -21,8 +21,6 @@ libshared_sources = files('''
         calocation.h
         camakebst.c
         camakebst.h
-        canbd.c
-        canbd.h
         caorigin.c
         caorigin.h
         caprotocol-util.c
@@ -47,8 +45,6 @@ libshared_sources = files('''
         parse-util.h
         realloc-buffer.c
         realloc-buffer.h
-        reflink.c
-        reflink.h
         rm-rf.c
         rm-rf.h
         siphash24.c
@@ -65,8 +61,6 @@ libshared = static_library(
 
 casync_sources = files('''
         casync-tool.c
-        canbd.c
-        canbd.h
         cafuse.h
         signal-handler.c
         signal-handler.h
