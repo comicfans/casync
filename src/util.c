@@ -1044,7 +1044,16 @@ int wait_for_terminate(pid_t pid, siginfo_t *status) {
                 status = &dummy;
 
         for (;;) {
-                memset(status, 0, sizeof(siginfo_t));
+                int intstatus=0;
+
+                waitpid(pid, &intstatus, 0);
+                if (!WIFEXITED(intstatus)) {
+
+                        if (errno == EINTR)
+                                continue;
+
+                        return -errno;
+                }
 
                 return 0;
         }
